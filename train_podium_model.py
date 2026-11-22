@@ -6,6 +6,43 @@ from sklearn.metrics import accuracy_score, precision_score
 
 DATA_DIR = Path("data")
 
+TEAM_COLORS = {
+    "McLaren": "\033[38;5;208m",      # Papaya orange
+    "Mercedes": "\033[38;5;44m",      # Teal / Petronas cyan
+    "Red Bull": "\033[38;5;33m",      # Deep blue
+    "Ferrari": "\033[38;5;196m",      # Rosso Corsa red
+    "Aston Martin": "\033[38;5;29m",  # British racing green
+    "Alpine F1 Team": "\033[38;5;198m",
+    "Williams": "\033[38;5;39m",
+    "RB F1 Team": "\033[38;5;63m",
+    "Sauber": "\033[38;5;46m",
+    "Haas F1 Team": "\033[38;5;245m",
+}
+DRIVER_PALETTE = [
+    "\033[96m",  # Bright cyan
+    "\033[93m",  # Bright yellow
+    "\033[92m",  # Bright green
+    "\033[95m",  # Bright magenta
+    "\033[94m",  # Bright blue
+    "\033[91m",  # Bright red
+]
+RESET = "\033[0m"
+BOLD = "\033[1m"
+
+
+def colorize_driver(name: str) -> str:
+    idx = sum(ord(ch) for ch in name) % len(DRIVER_PALETTE)
+    return f"{BOLD}{DRIVER_PALETTE[idx]}{name}{RESET}"
+
+
+def colorize_team(team: str) -> str:
+    for key, code in TEAM_COLORS.items():
+        if key.lower() in team.lower():
+            return f"{BOLD}{code}{team}{RESET}"
+    idx = sum(ord(ch) for ch in team) % len(DRIVER_PALETTE)
+    return f"{DRIVER_PALETTE[idx]}{team}{RESET}"
+
+
 results = pd.read_csv(DATA_DIR / "results.csv")
 races = pd.read_csv(DATA_DIR / "races.csv")[["raceId", "year", "round", "circuitId", "name"]]
 drivers = pd.read_csv(DATA_DIR / "drivers.csv")[["driverId", "forename", "surname"]]
@@ -13,7 +50,9 @@ constructors = pd.read_csv(DATA_DIR / "constructors.csv")[["constructorId", "nam
     columns={"name": "team_name"}
 )
 
-drivers["driver_name"] = drivers["forename"].astype(str).str.strip() + " " + drivers["surname"].astype(str).str.strip()
+drivers["driver_name"] = (
+    drivers["forename"].astype(str).str.strip() + " " + drivers["surname"].astype(str).str.strip()
+)
 
 df = results.merge(races, on="raceId", how="inner")
 df = df.merge(drivers[["driverId", "driver_name"]], on="driverId", how="left")
@@ -98,18 +137,20 @@ print(f"Grid Top-3 Baseline      -> Precision: {baseline_prec:.1%} | Accuracy: {
 print(f"Gradient Boosting Top-3  -> Precision: {model_prec:.1%} | Accuracy: {model_acc:.1%}")
 
 sample_races = test_df[["year", "round", "name", "raceId"]].drop_duplicates().tail(3)
-print("\nSample Top-3 Predicted Podiums (with Driver & Team Names):")
+print("\nSample Top-3 Predicted Podiums (Color-Coded Driver & Team Names):")
 for _, race in sample_races.iterrows():
     race_preds = (
         test_df[test_df["raceId"] == race["raceId"]]
         .sort_values("pred_rank")
         .head(3)
     )
-    print(f"\n{race['year']} R{race['round']} - {race['name']}:")
+    print(f"\n{BOLD}{race['year']} R{race['round']} - {race['name']}{RESET}:")
     for _, row in race_preds.iterrows():
         actual_pos = int(row["positionOrder"]) if pd.notna(row["positionOrder"]) else -1
+        d_colored = colorize_driver(row["driver_name"])
+        t_colored = colorize_team(row["team_name"])
         print(
-            f"  #{int(row['pred_rank'])} {row['driver_name']} ({row['team_name']}) "
+            f"  #{int(row['pred_rank'])} {d_colored} ({t_colored}) "
             f"| prob={row['podium_prob']:.1%} | grid={int(row['grid'])} | actual_finish=P{actual_pos}"
         )
 
