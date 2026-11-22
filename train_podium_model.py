@@ -8,8 +8,19 @@ DATA_DIR = Path("data")
 
 results = pd.read_csv(DATA_DIR / "results.csv")
 races = pd.read_csv(DATA_DIR / "races.csv")[["raceId", "year", "round", "circuitId", "name"]]
+drivers = pd.read_csv(DATA_DIR / "drivers.csv")[["driverId", "forename", "surname"]]
+constructors = pd.read_csv(DATA_DIR / "constructors.csv")[["constructorId", "name"]].rename(
+    columns={"name": "team_name"}
+)
+
+drivers["driver_name"] = drivers["forename"].astype(str).str.strip() + " " + drivers["surname"].astype(str).str.strip()
 
 df = results.merge(races, on="raceId", how="inner")
+df = df.merge(drivers[["driverId", "driver_name"]], on="driverId", how="left")
+df = df.merge(constructors, on="constructorId", how="left")
+
+df["driver_name"] = df["driver_name"].fillna("Driver " + df["driverId"].astype(str))
+df["team_name"] = df["team_name"].fillna("Team " + df["constructorId"].astype(str))
 
 df["grid"] = pd.to_numeric(df["grid"], errors="coerce").replace(0, 20).fillna(20)
 df["positionOrder"] = pd.to_numeric(df["positionOrder"], errors="coerce")
@@ -86,6 +97,22 @@ print(f"Test rows (2022-2024): {len(test_df)}")
 print(f"Grid Top-3 Baseline      -> Precision: {baseline_prec:.1%} | Accuracy: {baseline_acc:.1%}")
 print(f"Gradient Boosting Top-3  -> Precision: {model_prec:.1%} | Accuracy: {model_acc:.1%}")
 
+sample_races = test_df[["year", "round", "name", "raceId"]].drop_duplicates().tail(3)
+print("\nSample Top-3 Predicted Podiums (with Driver & Team Names):")
+for _, race in sample_races.iterrows():
+    race_preds = (
+        test_df[test_df["raceId"] == race["raceId"]]
+        .sort_values("pred_rank")
+        .head(3)
+    )
+    print(f"\n{race['year']} R{race['round']} - {race['name']}:")
+    for _, row in race_preds.iterrows():
+        actual_pos = int(row["positionOrder"]) if pd.notna(row["positionOrder"]) else -1
+        print(
+            f"  #{int(row['pred_rank'])} {row['driver_name']} ({row['team_name']}) "
+            f"| prob={row['podium_prob']:.1%} | grid={int(row['grid'])} | actual_finish=P{actual_pos}"
+        )
+
 podium_by_grid = df[df["grid"].between(1, 10)].groupby("grid")["podium"].mean() * 100
 plt.figure(figsize=(8, 4.5), dpi=150)
 podium_by_grid.plot(kind="bar", color="#e10600")
@@ -103,4 +130,4 @@ plt.title("Pre-Race Feature Importance for F1 Podium Prediction")
 plt.xlabel("Importance")
 plt.tight_layout()
 plt.savefig("feature_importance.png")
-print("Saved charts: podium_by_grid.png and feature_importance.png")
+print("\nSaved charts: podium_by_grid.png and feature_importance.png")
